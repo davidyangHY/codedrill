@@ -1,22 +1,28 @@
 # CodeDrill
 
-A desktop app for **SQL & Python interview practice** with an **adaptive AI tutor** powered by Claude. It watches what you get wrong and deliberately serves problems that target your weak spots, adjusting difficulty and variety as you improve — like a real tutor. Solve problems in a real Monaco editor, get graded and explained, build a daily practice habit, and track everything over time.
+A desktop app for **SQL & Python interview practice** with an **adaptive AI tutor** powered by Claude. Instead of a static problem list, CodeDrill generates the *next* problem you should be working on — aimed at your weak spots — and sits next to you as a tutor you can actually talk to.
 
 ![Electron](https://img.shields.io/badge/Electron-33-47848F) ![React](https://img.shields.io/badge/React-18-61DAFB)
+
+## Why not just grind LeetCode?
+
+A problem bank is a fixed list you navigate yourself. CodeDrill is the opposite: it decides what to give you next, and it teaches while you solve.
+
+- **Problems adapt to *you*, not a catalog.** With difficulty on **Auto**, Claude reads your history and picks the next problem to prioritize the concepts you miss or rarely practice, avoids repeating recent topics, and moves difficulty up or down as you succeed or struggle. Every problem is freshly generated, so you're never memorizing a curated set — and it won't repeat problems you've already seen.
+- **A tutor you can question, not just an answer key.** The right pane is a live conversation. Stuck? Ask for a nudge instead of the solution. Confused by the prompt? Ask it to clarify the schema or restate the question. Disagree with the grade? Push back. Want it harder, easier, or a variation on the same idea? Just ask — and it stays in character as a coach, not a spoiler.
+- **It remembers you across sessions.** Your weak-spot history persists, and when you reopen the app the tutor resumes the same conversation and the exact problem you left open — so practice compounds instead of resetting every time.
+- **Built for a daily habit, not a leaderboard.** A goal of X minutes or X problems, a pausable timer, a streak, and a year-long contribution calendar keep you consistent — the thing that actually moves interview readiness.
 
 ## Features
 
 - **Split-pane workspace** — problem + Monaco editor on the left, AI tutor chat on the right (both dividers are draggable).
-- **Adaptive tutor** — with difficulty set to **Auto**, Claude picks your next problem from your history: it prioritizes concepts you miss or rarely practice, avoids repeating recent concepts, and steps difficulty up or down as you succeed or struggle. You can still force **Easy / Medium / Hard**, and toggle **SQL / Python**.
-- **New Problem** — Claude generates a fresh, interview-style problem (description, table schemas for SQL, examples, hint) that renders in the problem panel. The concept being tested is hidden from the problem and chat (it's a giveaway) and only shown later in Stats/History.
-- **No repeats** — every generated problem's title is saved to a durable table and fed back to the model, so it invents genuinely new problems instead of looping the same classics across restarts.
+- **Adaptive problem generation** — difficulty **Auto** lets the tutor choose the concept and level from your history; or force **Easy / Medium / Hard** and toggle **SQL / Python** yourself. The concept being tested is hidden from the problem and chat (it's a giveaway) and only revealed later in Stats/History.
+- **Ask anything, mid-problem** — request a hint, ask it to clarify the question or the table schema, challenge a grade, or say "give me a harder version of this." New-problem requests in chat are answered adaptively too.
 - **Run vs Submit** — **Run** does a quick check and replies with just a **CORRECT / INCORRECT** verdict (no explanation); **Submit** returns the full grade with bugs, fixes, and a clean version. Whichever you press first records the attempt.
-- **Free-form chat** — ask for hints, explanations, or "give me a harder version of this." Requests for a new problem are answered adaptively too.
-- **Session reload** — quit and reopen and you land back on the exact problem you had open, with your code and chat intact. The tutor's own conversation is resumed and your weak-spot history persists, so it picks up where you left off.
-- **Daily practice** — set a goal of X minutes **or** X problems (whichever comes first). A pausable per-day timer (with seconds) tracks focused time, and a day counts toward your **streak** when you hit either target.
+- **Session reload** — quit and reopen and you land back on the exact problem, code, and chat you had open, with the tutor's conversation resumed.
+- **Daily practice** — a goal of X minutes **or** X problems (whichever comes first), a pausable per-day timer with seconds, and a **streak** for hitting either target.
 - **Contribution calendar** — a full-year GitHub-style heatmap of your practice (darker green = more active), at the top of the History page.
-- **Progress tracking** (SQLite) — total solved, accuracy, average time, and day streak on the **Stats** page.
-- **Weak-spots review** — Stats lists the concepts you miss most, each with a **Practice** button that generates a fresh problem targeting it.
+- **Progress & weak spots** — the **Stats** page shows total solved, accuracy, average time, and streak, plus the concepts you miss most — each with a **Practice** button that generates a fresh problem targeting it.
 - **History** — every attempt, filterable by **Solved / Attempted**. Expand any one to re-read the original problem, your solution, and the tutor's feedback, and **Reopen & retry** to load it back into the editor.
 - **Plan usage** — a chip in the top bar shows your Claude 5-hour usage; the **Usage** panel breaks down the 5-hour / 7-day windows and lets you switch models.
 - **Desktop niceties** — remembers window size/position, dark theme, native menu bar (File / Mode / View), keyboard shortcuts (Ctrl+N new session, Ctrl+S Stats, Ctrl+H History, Ctrl+U Usage, Ctrl+1/2 mode).
