@@ -14,9 +14,22 @@ contextBridge.exposeInMainWorld('api', {
     getStats: () => ipcRenderer.invoke('db:getStats'),
     getHistory: (limit) => ipcRenderer.invoke('db:getHistory', limit),
     getAdaptiveSummary: (typeLabel) => ipcRenderer.invoke('db:getAdaptiveSummary', typeLabel),
+    recordSeenProblem: (payload) => ipcRenderer.invoke('db:recordSeenProblem', payload),
+    getRecentTitles: (typeLabel, limit) => ipcRenderer.invoke('db:getRecentTitles', typeLabel, limit),
     setResultCorrectness: (id, wasCorrect) =>
       ipcRenderer.invoke('db:setResultCorrectness', { id, wasCorrect }),
     newSession: () => ipcRenderer.invoke('db:newSession'),
+  },
+  daily: {
+    setToday: (ms) => ipcRenderer.invoke('daily:setToday', ms),
+    getProgress: () => ipcRenderer.invoke('daily:getProgress'),
+    getGoal: () => ipcRenderer.invoke('daily:getGoal'),
+    setGoal: (patch) => ipcRenderer.invoke('daily:setGoal', patch),
+  },
+  workspace: {
+    load: () => ipcRenderer.invoke('workspace:load'),
+    save: (ws) => ipcRenderer.invoke('workspace:save', ws),
+    clear: () => ipcRenderer.invoke('workspace:clear'),
   },
   ai: {
     // Streams one tutor turn. Returns the requestId; caller subscribes with onChunk/onDone/onError.

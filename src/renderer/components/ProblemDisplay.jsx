@@ -42,7 +42,7 @@ export default function ProblemDisplay({ problem, generating, streamingText }) {
   if (!problem) {
     return (
       <div className="h-full flex flex-col items-center justify-center text-center p-8 text-base-500">
-        <div className="w-12 h-12 mb-4 rounded-xl border border-base-600 flex items-center justify-center text-base-500 text-lg font-bold tracking-tight">
+        <div className="w-12 h-12 mb-4 rounded-xl brand-grad flex items-center justify-center text-lg font-bold tracking-tight shadow-lg shadow-accent/20">
           CD
         </div>
         <p className="text-base font-medium text-gray-300 mb-1">No problem yet</p>
@@ -74,20 +74,8 @@ export default function ProblemDisplay({ problem, generating, streamingText }) {
               {problem.type}
             </span>
           )}
-          {problem.topic && (
-            <span className="px-2 py-0.5 rounded-full text-xs font-medium border border-accent/30 bg-accent/10 text-accent capitalize">
-              {problem.topic}
-            </span>
-          )}
         </div>
       </div>
-
-      {problem.coach && problem.coach.trim() ? (
-        <div className="mb-4 text-sm text-gray-200 bg-accent/10 border border-accent/25 rounded-lg px-3 py-2">
-          <span className="text-xs font-semibold uppercase tracking-wider text-accent mr-1.5">Tutor</span>
-          {problem.coach}
-        </div>
-      ) : null}
 
       <Section label="Description">{problem.description}</Section>
       {problem.tables && problem.tables.trim() ? (

@@ -31,6 +31,33 @@ function usageChip(usage) {
   return { pct, cls };
 }
 
+function dayGoal(daily, dayMs) {
+  const goal = (daily && daily.goal) || { minutes: 20, problems: 3 };
+  const problems = (daily && daily.today && daily.today.problems) || 0;
+  const minutes = Math.floor((dayMs || 0) / 60000);
+  const met =
+    (goal.minutes > 0 && dayMs >= goal.minutes * 60000) ||
+    (goal.problems > 0 && problems >= goal.problems);
+  const s = Math.floor((dayMs || 0) / 1000);
+  const h = Math.floor(s / 3600);
+  const m = Math.floor((s % 3600) / 60);
+  const sec = s % 60;
+  const pad = (n) => String(n).padStart(2, '0');
+  const clock = h > 0 ? `${h}:${pad(m)}:${pad(sec)}` : `${m}:${pad(sec)}`;
+  return { goal, problems, minutes, met, clock };
+}
+
+const PlayIcon = () => (
+  <svg width="10" height="10" viewBox="0 0 24 24" fill="currentColor">
+    <path d="M8 5v14l11-7z" />
+  </svg>
+);
+const PauseIcon = () => (
+  <svg width="10" height="10" viewBox="0 0 24 24" fill="currentColor">
+    <path d="M6 5h4v14H6zM14 5h4v14h-4z" />
+  </svg>
+);
+
 export default function TopBar({
   mode,
   setMode,
@@ -40,14 +67,21 @@ export default function TopBar({
   onShowStats,
   onShowHistory,
   onShowUsage,
+  onShowDaily,
+  onToggleDay,
+  dayMs,
+  dayRunning,
+  daily,
   usage,
   loading,
   timerText,
   timerRunning,
+  view,
 }) {
   const chip = usageChip(usage);
+  const day = dayGoal(daily, dayMs);
   return (
-    <div className="flex items-center gap-3 px-4 py-2.5 border-b border-base-600 bg-base-850 flex-wrap">
+    <div className="flex items-center gap-3 px-4 py-2.5 border-b border-base-600 bg-base-850/70 backdrop-blur-md flex-wrap">
       {/* Mode toggle */}
       <div className="flex rounded-lg bg-base-900 border border-base-600 p-0.5">
         {['sql', 'python'].map((m) => (
@@ -81,20 +115,53 @@ export default function TopBar({
         ))}
       </div>
 
+      {/* Today's goal + pausable day timer */}
+      <div
+        className={`flex items-center gap-1.5 rounded-lg border px-1.5 py-1 transition-colors ${
+          day.met ? 'border-good/40 bg-good/10' : dayRunning ? 'border-accent/40 bg-accent/10' : 'border-base-600'
+        }`}
+        title="Today's practice — click to open"
+      >
+        <button
+          onClick={onToggleDay}
+          className={`w-5 h-5 rounded flex items-center justify-center transition-colors ${
+            dayRunning ? 'bg-accent text-white' : 'bg-base-700 text-gray-300 hover:bg-base-600'
+          }`}
+          title={dayRunning ? 'Pause daily timer' : 'Start daily timer'}
+        >
+          {dayRunning ? <PauseIcon /> : <PlayIcon />}
+        </button>
+        <button
+          onClick={onShowDaily}
+          className={`text-xs font-medium tabular-nums ${day.met ? 'text-good' : 'text-gray-300'}`}
+          title="Daily goal"
+        >
+          {day.clock} · {day.problems}/{day.goal.problems || '—'}
+        </button>
+      </div>
+
       <div className="flex-1" />
 
       {/* Progress views */}
       <div className="flex gap-1">
         <button
           onClick={onShowStats}
-          className="px-2.5 py-1.5 text-sm font-medium rounded-lg text-gray-400 hover:text-gray-200 hover:bg-base-700 transition-colors"
+          className={`px-2.5 py-1.5 text-sm font-medium rounded-lg transition-colors ${
+            view === 'stats'
+              ? 'bg-accent/20 text-accent'
+              : 'text-gray-400 hover:text-gray-200 hover:bg-base-700'
+          }`}
           title="Progress stats (Ctrl+S)"
         >
           Stats
         </button>
         <button
           onClick={onShowHistory}
-          className="px-2.5 py-1.5 text-sm font-medium rounded-lg text-gray-400 hover:text-gray-200 hover:bg-base-700 transition-colors"
+          className={`px-2.5 py-1.5 text-sm font-medium rounded-lg transition-colors ${
+            view === 'history'
+              ? 'bg-accent/20 text-accent'
+              : 'text-gray-400 hover:text-gray-200 hover:bg-base-700'
+          }`}
           title="History (Ctrl+H)"
         >
           History
@@ -127,7 +194,7 @@ export default function TopBar({
       <button
         onClick={onNewProblem}
         disabled={loading}
-        className="px-4 py-1.5 rounded-lg bg-accent hover:bg-accent-hover disabled:opacity-50 disabled:cursor-not-allowed text-sm font-semibold transition-colors flex items-center gap-2"
+        className="px-4 py-1.5 rounded-lg btn-grad disabled:cursor-not-allowed text-sm font-semibold transition-all flex items-center gap-2"
       >
         {loading ? (
           <>

@@ -1,5 +1,6 @@
 import React, { useEffect, useMemo, useState } from 'react';
 import { renderMarkdown } from '../lib/parse.js';
+import ContributionCalendar from './ContributionCalendar.jsx';
 
 function fmtTime(ms) {
   if (!ms) return '0s';
@@ -87,10 +88,16 @@ function Detail({ item, onReopen, onSetCorrect }) {
   );
 }
 
-export default function HistoryModal({ onClose, onReopen }) {
+export default function HistoryPage({ onBack, onReopen, daily }) {
   const [items, setItems] = useState(null);
   const [filter, setFilter] = useState('all'); // all | solved | unsolved
   const [openId, setOpenId] = useState(null);
+
+  const series = daily && daily.series;
+  const goalMetDays = useMemo(
+    () => (series ? series.filter((d) => d.goalMet).length : 0),
+    [series]
+  );
 
   const setCorrect = async (id, wasCorrect) => {
     // Optimistic local update, then persist.
@@ -135,92 +142,98 @@ export default function HistoryModal({ onClose, onReopen }) {
   ];
 
   return (
-    <div className="fixed inset-0 z-50 bg-black/60 flex items-center justify-center p-6" onClick={onClose}>
-      <div
-        className="bg-base-850 border border-base-600 rounded-2xl w-full max-w-2xl max-h-[85vh] flex flex-col animate-fade-in"
-        onClick={(e) => e.stopPropagation()}
-      >
-        <div className="flex items-center justify-between px-5 py-4 border-b border-base-600">
-          <h2 className="text-lg font-bold">History</h2>
+    <div className="flex-1 overflow-y-auto app-bg">
+      <div className="max-w-4xl mx-auto px-6 py-6">
+        <div className="flex items-center gap-3 mb-6">
           <button
-            onClick={onClose}
-            className="w-8 h-8 rounded-lg hover:bg-base-700 flex items-center justify-center text-lg leading-none text-gray-400 hover:text-gray-200 transition-colors"
+            onClick={onBack}
+            className="px-3 py-1.5 rounded-lg bg-base-800 border border-base-600 hover:bg-base-700 text-sm text-gray-300 transition-colors flex items-center gap-1.5"
           >
-            ×
+            <span className="text-base leading-none">‹</span> Back
           </button>
+          <h1 className="text-xl font-bold">History</h1>
         </div>
 
-        <div className="px-5 pt-3">
-          <div className="flex gap-1 bg-base-900 border border-base-600 rounded-lg p-0.5 w-fit">
-            {tabs.map((t) => (
-              <button
-                key={t.key}
-                onClick={() => setFilter(t.key)}
-                className={`px-3 py-1 text-sm rounded-md transition-colors ${
-                  filter === t.key ? 'bg-accent text-white font-medium' : 'text-gray-400 hover:text-gray-200'
-                }`}
-              >
-                {t.label}
-              </button>
-            ))}
+        {/* Practice calendar */}
+        {series && series.length > 0 && (
+          <div className="bg-base-850 border border-base-600 rounded-xl p-4 mb-6">
+            <div className="flex items-center justify-between mb-3">
+              <div className="text-xs font-semibold uppercase tracking-wider text-base-500">Practice calendar</div>
+              <div className="text-xs text-base-500">{goalMetDays} goal-met days</div>
+            </div>
+            <ContributionCalendar series={series} />
           </div>
+        )}
+
+        {/* Filter tabs */}
+        <div className="flex gap-1 bg-base-900 border border-base-600 rounded-lg p-0.5 w-fit mb-3">
+          {tabs.map((t) => (
+            <button
+              key={t.key}
+              onClick={() => setFilter(t.key)}
+              className={`px-3 py-1 text-sm rounded-md transition-colors ${
+                filter === t.key ? 'bg-accent text-white font-medium' : 'text-gray-400 hover:text-gray-200'
+              }`}
+            >
+              {t.label}
+            </button>
+          ))}
         </div>
 
-        <div className="flex-1 overflow-y-auto px-5 py-3">
-          {!items ? (
-            <div className="text-center text-base-500 py-10">Loading…</div>
-          ) : filtered.length === 0 ? (
-            <div className="text-center text-base-500 py-10 text-sm">
-              {counts.all === 0
-                ? 'No attempts yet. Solve a problem and it will show up here.'
-                : 'Nothing in this filter.'}
-            </div>
-          ) : (
-            <div className="space-y-1.5">
-              {filtered.map((item) => {
-                const open = openId === item.id;
-                return (
-                  <div
-                    key={item.id}
-                    className={`rounded-lg border transition-colors ${
-                      open ? 'border-accent/40 bg-base-800' : 'border-base-600 bg-base-900 hover:bg-base-800'
-                    }`}
+        {/* Attempt list */}
+        {!items ? (
+          <div className="text-center text-base-500 py-10">Loading…</div>
+        ) : filtered.length === 0 ? (
+          <div className="text-center text-base-500 py-10 text-sm">
+            {counts.all === 0
+              ? 'No attempts yet. Solve a problem and it will show up here.'
+              : 'Nothing in this filter.'}
+          </div>
+        ) : (
+          <div className="space-y-1.5">
+            {filtered.map((item) => {
+              const open = openId === item.id;
+              return (
+                <div
+                  key={item.id}
+                  className={`rounded-lg border transition-colors ${
+                    open ? 'border-accent/40 bg-base-800' : 'border-base-600 bg-base-900 hover:bg-base-800'
+                  }`}
+                >
+                  <button
+                    onClick={() => setOpenId(open ? null : item.id)}
+                    className="w-full flex items-center gap-3 px-3 py-2 text-left"
                   >
-                    <button
-                      onClick={() => setOpenId(open ? null : item.id)}
-                      className="w-full flex items-center gap-3 px-3 py-2 text-left"
-                    >
-                      <span
-                        className={`w-2 h-2 rounded-full shrink-0 ${
-                          item.wasCorrect ? 'bg-good' : 'border border-base-500'
-                        }`}
-                        title={item.wasCorrect ? 'Solved' : 'Attempted'}
-                      />
-                      <div className="flex-1 min-w-0">
-                        <div className="text-sm text-gray-200 truncate">{item.title}</div>
-                        <div className="text-[11px] text-base-500">
-                          {item.type}
-                          {item.topic ? ` · ${item.topic}` : ''} ·{' '}
-                          <span className={diffColor(item.difficulty)}>{item.difficulty}</span>
-                        </div>
+                    <span
+                      className={`w-2 h-2 rounded-full shrink-0 ${
+                        item.wasCorrect ? 'bg-good' : 'border border-base-500'
+                      }`}
+                      title={item.wasCorrect ? 'Solved' : 'Attempted'}
+                    />
+                    <div className="flex-1 min-w-0">
+                      <div className="text-sm text-gray-200 truncate">{item.title}</div>
+                      <div className="text-[11px] text-base-500">
+                        {item.type}
+                        {item.topic ? ` · ${item.topic}` : ''} ·{' '}
+                        <span className={diffColor(item.difficulty)}>{item.difficulty}</span>
                       </div>
-                      <div className="text-[11px] text-base-500 text-right shrink-0">
-                        <div>{fmtDate(item.timestamp)}</div>
-                        <div className="tabular-nums">{fmtTime(item.timeSpentMs)}</div>
-                      </div>
-                      <span className={`text-base-500 text-xs transition-transform ${open ? 'rotate-90' : ''}`}>›</span>
-                    </button>
-                    {open && (
-                      <div className="px-3 pb-3">
-                        <Detail item={item} onReopen={onReopen} onSetCorrect={setCorrect} />
-                      </div>
-                    )}
-                  </div>
-                );
-              })}
-            </div>
-          )}
-        </div>
+                    </div>
+                    <div className="text-[11px] text-base-500 text-right shrink-0">
+                      <div>{fmtDate(item.timestamp)}</div>
+                      <div className="tabular-nums">{fmtTime(item.timeSpentMs)}</div>
+                    </div>
+                    <span className={`text-base-500 text-xs transition-transform ${open ? 'rotate-90' : ''}`}>›</span>
+                  </button>
+                  {open && (
+                    <div className="px-3 pb-3">
+                      <Detail item={item} onReopen={onReopen} onSetCorrect={setCorrect} />
+                    </div>
+                  )}
+                </div>
+              );
+            })}
+          </div>
+        )}
       </div>
     </div>
   );

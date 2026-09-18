@@ -4,9 +4,10 @@ import TopBar from './components/TopBar.jsx';
 import ProblemDisplay from './components/ProblemDisplay.jsx';
 import CodeEditor from './components/CodeEditor.jsx';
 import Chat from './components/Chat.jsx';
-import StatsModal from './components/StatsModal.jsx';
-import HistoryModal from './components/HistoryModal.jsx';
+import StatsPage from './components/StatsPage.jsx';
+import HistoryPage from './components/HistoryPage.jsx';
 import UsageModal from './components/UsageModal.jsx';
+import DailyModal from './components/DailyModal.jsx';
 import { streamChat } from './lib/aiClient.js';
 import { extractProblem, extractVerdict, parseRunVerdict } from './lib/parse.js';
 
@@ -119,12 +120,13 @@ export default function App() {
   const [busy, setBusy] = useState(false);
   const [generating, setGenerating] = useState(false);
   const [genText, setGenText] = useState('');
-  const [showStats, setShowStats] = useState(false);
-  const [showHistory, setShowHistory] = useState(false);
+  const [view, setView] = useState('practice'); // 'practice' | 'stats' | 'history'
   const [showUsage, setShowUsage] = useState(false);
   const [usage, setUsage] = useState(null); // { usage, sessionCostUsd }
   const [attempted, setAttempted] = useState(false);
   const gradedRef = useRef(false); // records exactly one attempt per problem
+  const hydratedRef = useRef(false); // true once the saved workspace has loaded
+  const workspaceRef = useRef(null); // latest snapshot, flushed on window close
 
   // Records the attempt for stats/weak-topics. Only the first grading action
   // (Run or Submit) on a given problem counts.
@@ -225,21 +227,175 @@ export default function App() {
     if (!busy) pullUsage();
   }, [busy, pullUsage]);
 
+  // ---------- Daily practice (goal + pausable day timer) ----------
+  const [dayMs, setDayMs] = useState(0);
+  const [dayRunning, setDayRunning] = useState(false);
+  const [daily, setDaily] = useState(null);
+  const [showDaily, setShowDaily] = useState(false);
+  const dayMsRef = useRef(0);
+  const dayRunningRef = useRef(false);
+  const dayRunStart = useRef(0);
+  const dayRunBase = useRef(0);
+  useEffect(() => {
+    dayMsRef.current = dayMs;
+  }, [dayMs]);
+  useEffect(() => {
+    dayRunningRef.current = dayRunning;
+  }, [dayRunning]);
+
+  const loadDaily = useCallback(async () => {
+    if (!window.api || !window.api.daily) return;
+    try {
+      const p = await window.api.daily.getProgress();
+      setDaily(p);
+      if (p && p.today && !dayRunningRef.current) setDayMs(p.today.practiceMs || 0);
+    } catch {
+      /* ignore */
+    }
+  }, []);
+
+  useEffect(() => {
+    loadDaily();
+  }, [loadDaily]);
+  // Refresh problems-today / streak whenever a turn finishes.
+  useEffect(() => {
+    if (!busy) loadDaily();
+  }, [busy, loadDaily]);
+
+  const startDay = useCallback(() => {
+    if (dayRunningRef.current) return;
+    dayRunBase.current = dayMsRef.current;
+    dayRunStart.current = Date.now();
+    setDayRunning(true);
+  }, []);
+
+  const pauseDay = useCallback(() => {
+    if (!dayRunningRef.current) return;
+    const finalMs = dayRunBase.current + (Date.now() - dayRunStart.current);
+    dayMsRef.current = finalMs;
+    setDayMs(finalMs);
+    setDayRunning(false);
+    if (window.api && window.api.daily) window.api.daily.setToday(finalMs).then(loadDaily).catch(() => {});
+  }, [loadDaily]);
+
+  const toggleDay = useCallback(() => {
+    if (dayRunningRef.current) pauseDay();
+    else startDay();
+  }, [pauseDay, startDay]);
+
+  useEffect(() => {
+    if (!dayRunning) return undefined;
+    const tick = setInterval(() => {
+      const ms = dayRunBase.current + (Date.now() - dayRunStart.current);
+      dayMsRef.current = ms;
+      setDayMs(ms);
+    }, 1000);
+    const flush = setInterval(() => {
+      if (window.api && window.api.daily) window.api.daily.setToday(dayMsRef.current).catch(() => {});
+    }, 5000);
+    return () => {
+      clearInterval(tick);
+      clearInterval(flush);
+    };
+  }, [dayRunning]);
+
+  // Persist the day timer when the window closes.
+  useEffect(() => {
+    const onUnload = () => {
+      try {
+        if (window.api && window.api.daily) window.api.daily.setToday(dayMsRef.current);
+      } catch {
+        /* ignore */
+      }
+    };
+    window.addEventListener('beforeunload', onUnload);
+    return () => window.removeEventListener('beforeunload', onUnload);
+  }, []);
+
+  // ---------- Session reload (restore where you left off) ----------
+  // On launch, rehydrate the last problem, editor code, chat transcript, and
+  // mode/difficulty. The tutor's own conversation memory is resumed separately in
+  // the main process (its persisted Agent SDK session id), and weak-topic history
+  // lives in the database — so the tutor picks up right where you left it.
+  useEffect(() => {
+    let cancelled = false;
+    (async () => {
+      try {
+        if (window.api && window.api.workspace) {
+          const ws = await window.api.workspace.load();
+          if (!cancelled && ws && typeof ws === 'object') {
+            if (ws.mode === 'sql' || ws.mode === 'python') setMode(ws.mode);
+            if (['Auto', 'Easy', 'Medium', 'Hard'].includes(ws.difficulty)) setDifficulty(ws.difficulty);
+            if (typeof ws.code === 'string') setCode(ws.code);
+            if (ws.problem && typeof ws.problem === 'object') setProblem(ws.problem);
+            if (Array.isArray(ws.messages) && ws.messages.length) setMessages(ws.messages);
+            if (ws.attempted) {
+              setAttempted(true);
+              gradedRef.current = true;
+            }
+          }
+        }
+      } catch {
+        /* ignore — start fresh */
+      } finally {
+        if (!cancelled) hydratedRef.current = true;
+      }
+    })();
+    return () => {
+      cancelled = true;
+    };
+  }, []);
+
+  // Persist the workspace (debounced) whenever it changes, so a restart reloads it.
+  useEffect(() => {
+    if (!hydratedRef.current) return undefined;
+    if (!window.api || !window.api.workspace) return undefined;
+    // Drop empty in-flight assistant bubbles and clear streaming flags so a
+    // restored transcript never looks stuck mid-response.
+    const cleanMsgs = messages
+      .filter((m) => !(m.role === 'assistant' && m.streaming && !m.content && m.kind !== 'problem'))
+      .map((m) => (m.streaming ? { ...m, streaming: false } : m))
+      .slice(-80);
+    const snapshot = { mode, difficulty, code, problem, attempted, messages: cleanMsgs };
+    workspaceRef.current = snapshot;
+    const t = setTimeout(() => {
+      window.api.workspace.save(snapshot).catch(() => {});
+    }, 700);
+    return () => clearTimeout(t);
+  }, [mode, difficulty, code, problem, attempted, messages]);
+
+  // Best-effort flush of the latest snapshot when the window closes.
+  useEffect(() => {
+    const onUnload = () => {
+      try {
+        if (window.api && window.api.workspace && workspaceRef.current) {
+          window.api.workspace.save(workspaceRef.current);
+        }
+      } catch {
+        /* ignore */
+      }
+    };
+    window.addEventListener('beforeunload', onUnload);
+    return () => window.removeEventListener('beforeunload', onUnload);
+  }, []);
+
   // ---------- Menu wiring ----------
   useEffect(() => {
     if (!window.api || !window.api.menu) return undefined;
     const offMode = window.api.menu.onMode((m) => setMode(m));
-    const offStats = window.api.menu.onStats(() => setShowStats(true));
-    const offHistory = window.api.menu.onHistory(() => setShowHistory(true));
+    const offStats = window.api.menu.onStats(() => setView('stats'));
+    const offHistory = window.api.menu.onHistory(() => setView('history'));
     const offUsage = window.api.menu.onUsage(() => setShowUsage(true));
     const offNew = window.api.menu.onNewSession(() => {
-      // main already reset the tutor session; clear the UI to match.
+      // main already reset the tutor session + cleared the saved workspace;
+      // clear the UI to match.
       setMessages([]);
       setProblem(null);
       setCode(starter(mode));
       resetTimer();
       setAttempted(false);
       gradedRef.current = false;
+      setView('practice');
     });
     return () => {
       offMode();
@@ -312,6 +468,19 @@ export default function App() {
     gradedRef.current = false;
     setCode(starter(useMode));
     resetTimer();
+    startDay(); // begin the daily practice clock (no-op if already running)
+
+    // Titles the learner has already seen (persisted) so the model doesn't repeat them.
+    let recentTitles = [];
+    try {
+      recentTitles = await window.api.db.getRecentTitles(modeLabel(useMode), 40);
+    } catch {
+      recentTitles = [];
+    }
+    const avoidBlock =
+      recentTitles && recentTitles.length
+        ? ` Do NOT reuse or lightly reword any of these problems the learner has already seen — invent a genuinely different one with a new title: ${recentTitles.join('; ')}.`
+        : '';
 
     let prompt;
     let noteContent;
@@ -322,7 +491,7 @@ export default function App() {
       } catch {
         summary = null;
       }
-      prompt = buildAdaptivePrompt(summary, useMode, focusTopic);
+      prompt = buildAdaptivePrompt(summary, useMode, focusTopic) + avoidBlock;
       const solved = summary ? summary.attempted : 0;
       noteContent = focusTopic
         ? `Adapting a ${modeLabel(useMode)} problem on "${focusTopic}"…`
@@ -333,7 +502,7 @@ export default function App() {
       const focus = focusTopic ? ` Focus specifically on the concept "${focusTopic}".` : '';
       prompt = `Generate a new ${difficulty} ${modeLabel(
         useMode
-      )} problem.${focus} Respond with ONLY the JSON object exactly as specified in your instructions — no prose, no code fences.`;
+      )} problem.${focus}${avoidBlock} Respond with ONLY the JSON object exactly as specified in your instructions — no prose, no code fences.`;
       noteContent = focusTopic
         ? `Practicing "${focusTopic}" — ${difficulty} ${modeLabel(useMode)}`
         : `New ${difficulty} ${modeLabel(useMode)} problem requested`;
@@ -371,6 +540,9 @@ export default function App() {
             topic: parsed.topic || focusTopic || '',
           };
           setProblem(enriched);
+          if (window.api && window.api.db) {
+            window.api.db.recordSeenProblem({ title: enriched.title, type: enriched.type, topic: enriched.topic });
+          }
           setMessages((prev) =>
             prev.map((m) =>
               m.id === assistantId
@@ -411,7 +583,7 @@ export default function App() {
         );
       },
     });
-  }, [busy, generating, difficulty, mode, resetTimer]);
+  }, [busy, generating, difficulty, mode, resetTimer, startDay]);
 
   const noProblemNote = useCallback((verb) => {
     setMessages((prev) => [
@@ -535,8 +707,12 @@ export default function App() {
       setProblem(enriched);
       setCode(starter(newMode));
       resetTimer();
+      startDay();
       setAttempted(false);
       gradedRef.current = false;
+      if (window.api && window.api.db) {
+        window.api.db.recordSeenProblem({ title: enriched.title, type: enriched.type, topic: enriched.topic });
+      }
       setMessages((prev) =>
         prev.map((m) =>
           m.id === assistantId
@@ -546,7 +722,7 @@ export default function App() {
       );
       return true;
     },
-    [mode, difficulty, resetTimer]
+    [mode, difficulty, resetTimer, startDay]
   );
 
   const sendChat = useCallback(
@@ -564,8 +740,15 @@ export default function App() {
             summary = null;
           }
           const hist = adaptiveSummaryText(summary, modeLabel(mode));
+          let recentTitles = [];
+          try {
+            recentTitles = await window.api.db.getRecentTitles(modeLabel(mode), 40);
+          } catch {
+            recentTitles = [];
+          }
+          const avoid = recentTitles && recentTitles.length ? ` Do NOT repeat any of these already-seen problems: ${recentTitles.join('; ')}.` : '';
           upstream =
-            `${text}\n\n[If this is a request for a new/next problem, choose it adaptively: honor any specifics I gave; otherwise target a weak or under-practiced concept and set the difficulty to progress me. Then respond with ONLY the JSON problem object (with a one-sentence "coach" rationale). If it is NOT a request for a new problem, ignore this and answer normally. My ${modeLabel(mode)} history: ${hist}.]`;
+            `${text}\n\n[If this is a request for a new/next problem, choose it adaptively: honor any specifics I gave; otherwise target a weak or under-practiced concept and set the difficulty to progress me.${avoid} Then respond with ONLY the JSON problem object (with a one-sentence "coach" rationale). If it is NOT a request for a new problem, ignore this and answer normally. My ${modeLabel(mode)} history: ${hist}.]`;
         }
         appendAndStream({
           appendMsgs: [{ id: uid(), role: 'user', kind: 'text', content: text }],
@@ -590,7 +773,7 @@ export default function App() {
   // Practice a specific weak concept from the Stats view.
   const practiceTopic = useCallback(
     (t) => {
-      setShowStats(false);
+      setView('practice');
       const tmode =
         (t.type || '').toLowerCase() === 'python'
           ? 'python'
@@ -607,7 +790,7 @@ export default function App() {
   const loadAttempt = useCallback(
     (item) => {
       if (!item || !item.problem) return;
-      setShowHistory(false);
+      setView('practice');
       const tmode = (item.type || '').toLowerCase() === 'python' ? 'python' : 'sql';
       setMode(tmode);
       setProblem(item.problem);
@@ -677,22 +860,33 @@ export default function App() {
   }
 
   return (
-    <div className="h-full flex flex-col bg-base-900 overflow-hidden">
+    <div className="h-full flex flex-col app-bg overflow-hidden">
       <TopBar
         mode={mode}
         setMode={setMode}
         difficulty={difficulty}
         setDifficulty={setDifficulty}
         onNewProblem={() => generateProblem()}
-        onShowStats={() => setShowStats(true)}
-        onShowHistory={() => setShowHistory(true)}
+        onShowStats={() => setView('stats')}
+        onShowHistory={() => setView('history')}
         onShowUsage={() => setShowUsage(true)}
+        onShowDaily={() => setShowDaily(true)}
+        view={view}
+        onToggleDay={toggleDay}
+        dayMs={dayMs}
+        dayRunning={dayRunning}
+        daily={daily}
         usage={usage}
         loading={generating}
         timerText={timerText}
         timerRunning={running}
       />
 
+      {view === 'stats' ? (
+        <StatsPage onBack={() => setView('practice')} onPractice={practiceTopic} />
+      ) : view === 'history' ? (
+        <HistoryPage onBack={() => setView('practice')} onReopen={loadAttempt} daily={daily} />
+      ) : (
       <div className="flex-1 flex overflow-hidden">
         {/* Left pane */}
         <div ref={leftRef} className="flex flex-col overflow-hidden" style={{ width: `${leftPct}%` }}>
@@ -762,10 +956,19 @@ export default function App() {
           <Chat messages={messages} onSend={sendChat} busy={busy} ready={ready} />
         </div>
       </div>
+      )}
 
-      {showStats && <StatsModal onClose={() => setShowStats(false)} onPractice={practiceTopic} />}
-      {showHistory && <HistoryModal onClose={() => setShowHistory(false)} onReopen={loadAttempt} />}
       {showUsage && <UsageModal onClose={() => setShowUsage(false)} />}
+      {showDaily && (
+        <DailyModal
+          onClose={() => setShowDaily(false)}
+          dayMs={dayMs}
+          dayRunning={dayRunning}
+          onToggleDay={toggleDay}
+          daily={daily}
+          onChanged={loadDaily}
+        />
+      )}
     </div>
   );
 }

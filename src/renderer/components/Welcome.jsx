@@ -36,7 +36,7 @@ export default function Welcome({ onDone }) {
     <div className="h-full w-full flex items-center justify-center bg-base-900 p-6 overflow-y-auto">
       <div className="w-full max-w-lg animate-fade-in">
         <div className="flex items-center gap-3 mb-6">
-          <div className="w-11 h-11 rounded-xl bg-accent/20 border border-accent/40 flex items-center justify-center text-base font-bold tracking-tight text-accent">
+          <div className="w-11 h-11 rounded-xl brand-grad flex items-center justify-center text-base font-bold tracking-tight shadow-lg shadow-accent/30">
             CD
           </div>
           <div>
@@ -109,7 +109,7 @@ export default function Welcome({ onDone }) {
 
           <button
             onClick={onDone}
-            className="w-full py-2.5 rounded-lg bg-accent hover:bg-accent-hover font-medium text-sm transition-colors"
+            className="w-full py-2.5 rounded-lg btn-grad font-semibold text-sm transition-all"
           >
             Start practicing
           </button>

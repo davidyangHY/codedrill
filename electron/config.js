@@ -47,6 +47,24 @@ function setModel(m) {
   writeConfig({ model: m });
 }
 
+function getGoal() {
+  const cfg = readConfig();
+  return {
+    minutes: Number.isFinite(cfg.goalMinutes) ? cfg.goalMinutes : 20,
+    problems: Number.isFinite(cfg.goalProblems) ? cfg.goalProblems : 3,
+  };
+}
+
+function setGoal(patch) {
+  const cur = getGoal();
+  const next = {
+    goalMinutes: Math.max(0, Math.round(patch.minutes != null ? patch.minutes : cur.minutes)),
+    goalProblems: Math.max(0, Math.round(patch.problems != null ? patch.problems : cur.problems)),
+  };
+  writeConfig(next);
+  return getGoal();
+}
+
 function getWelcomeSeen() {
   return !!readConfig().welcomeSeen;
 }
@@ -65,16 +83,45 @@ function saveWindowState(state) {
   writeConfig({ windowState: state });
 }
 
+// ---- Workspace persistence (restore where you left off) ----
+// Holds the last problem, editor code, chat transcript, and mode/difficulty so
+// the app can reload your session on the next launch.
+function getWorkspace() {
+  return readConfig().workspace || null;
+}
+
+function setWorkspace(ws) {
+  writeConfig({ workspace: ws && typeof ws === 'object' ? ws : null });
+  return { ok: true };
+}
+
+// The Agent SDK session id for the tutor conversation. Persisting it lets the
+// tutor resume the same conversation (its own memory) after a restart.
+function getTutorSessionId() {
+  const id = readConfig().tutorSessionId;
+  return id && typeof id === 'string' ? id : null;
+}
+
+function setTutorSessionId(id) {
+  writeConfig({ tutorSessionId: id && typeof id === 'string' ? id : null });
+}
+
 module.exports = {
   getApiKey,
   hasApiKey,
   setApiKey,
   getModel,
   setModel,
+  getGoal,
+  setGoal,
   getWelcomeSeen,
   setWelcomeSeen,
   getWindowState,
   saveWindowState,
+  getWorkspace,
+  setWorkspace,
+  getTutorSessionId,
+  setTutorSessionId,
   readConfig,
   writeConfig,
 };

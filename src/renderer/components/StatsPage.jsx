@@ -91,7 +91,7 @@ function WeakSpots({ rows, onPractice }) {
   );
 }
 
-export default function StatsModal({ onClose, onPractice }) {
+export default function StatsPage({ onBack, onPractice }) {
   const [stats, setStats] = useState(null);
 
   useEffect(() => {
@@ -105,22 +105,16 @@ export default function StatsModal({ onClose, onPractice }) {
   }, []);
 
   return (
-    <div
-      className="fixed inset-0 z-50 bg-black/60 flex items-center justify-center p-6"
-      onClick={onClose}
-    >
-      <div
-        className="bg-base-850 border border-base-600 rounded-2xl w-full max-w-2xl max-h-[85vh] overflow-y-auto animate-fade-in"
-        onClick={(e) => e.stopPropagation()}
-      >
-        <div className="flex items-center justify-between px-5 py-4 border-b border-base-600 sticky top-0 bg-base-850">
-          <h2 className="text-lg font-bold">Your Progress</h2>
+    <div className="flex-1 overflow-y-auto app-bg">
+      <div className="max-w-4xl mx-auto px-6 py-6">
+        <div className="flex items-center gap-3 mb-6">
           <button
-            onClick={onClose}
-            className="w-8 h-8 rounded-lg hover:bg-base-700 flex items-center justify-center text-lg leading-none text-gray-400 hover:text-gray-200 transition-colors"
+            onClick={onBack}
+            className="px-3 py-1.5 rounded-lg bg-base-800 border border-base-600 hover:bg-base-700 text-sm text-gray-300 transition-colors flex items-center gap-1.5"
           >
-            ×
+            <span className="text-base leading-none">‹</span> Back
           </button>
+          <h1 className="text-xl font-bold">Your Progress</h1>
         </div>
 
         {!stats ? (
@@ -128,7 +122,7 @@ export default function StatsModal({ onClose, onPractice }) {
         ) : stats.error ? (
           <div className="p-10 text-center text-bad text-sm">{stats.error}</div>
         ) : (
-          <div className="p-5 space-y-6">
+          <div className="space-y-6">
             <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
               <Stat label="Problems Solved" value={stats.totalSolved} sub={`of ${stats.totalAttempted} attempted`} />
               <Stat label="Accuracy" value={`${Math.round((stats.accuracy || 0) * 100)}%`} />

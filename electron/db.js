@@ -38,6 +38,21 @@ function init() {
     );
   `);
 
+  db.exec(`
+    CREATE TABLE IF NOT EXISTS daily (
+      date TEXT PRIMARY KEY,
+      practice_ms INTEGER NOT NULL DEFAULT 0
+    );
+
+    CREATE TABLE IF NOT EXISTS seen_problems (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      title TEXT,
+      type TEXT,
+      topic TEXT,
+      timestamp TEXT NOT NULL
+    );
+  `);
+
   // Migrate older databases that predate newer columns.
   const cols = db.prepare('PRAGMA table_info(results)').all().map((c) => c.name);
   if (!cols.includes('topic')) db.exec('ALTER TABLE results ADD COLUMN topic TEXT');
@@ -240,6 +255,94 @@ function getAdaptiveSummary(typeLabel) {
   };
 }
 
+// ---- Seen problems (to avoid regenerating duplicates) ----
+function recordSeenProblem({ title, type, topic }) {
+  if (!title || !title.trim()) return { ok: false };
+  db.prepare(
+    'INSERT INTO seen_problems (title, type, topic, timestamp) VALUES (?, ?, ?, ?)'
+  ).run(title.trim(), type || '', (topic || '').toLowerCase() || null, new Date().toISOString());
+  return { ok: true };
+}
+
+// Distinct recent problem titles for a language (from both generated and
+// attempted problems), newest first — fed back to the model to avoid repeats.
+function getRecentTitles(typeLabel, limit = 40) {
+  const rows = db
+    .prepare(
+      `SELECT title FROM (
+         SELECT title, type, timestamp FROM seen_problems
+         UNION ALL
+         SELECT title, type, timestamp FROM results
+       )
+       WHERE LOWER(type) = LOWER(@t) AND title IS NOT NULL AND title != ''
+       GROUP BY title
+       ORDER BY MAX(timestamp) DESC
+       LIMIT @lim`
+    )
+    .all({ t: typeLabel, lim: Math.max(1, Math.min(200, limit)) });
+  return rows.map((r) => r.title);
+}
+
+// ---- Daily practice tracking ----
+function localDate(d = new Date()) {
+  const y = d.getFullYear();
+  const m = String(d.getMonth() + 1).padStart(2, '0');
+  const day = String(d.getDate()).padStart(2, '0');
+  return `${y}-${m}-${day}`;
+}
+
+// Absolute set of today's accumulated practice time (renderer owns the running clock).
+function setTodayPracticeMs(ms) {
+  const date = localDate();
+  const val = Math.max(0, Math.round(ms || 0));
+  db.prepare(
+    `INSERT INTO daily (date, practice_ms) VALUES (?, ?)
+     ON CONFLICT(date) DO UPDATE SET practice_ms = excluded.practice_ms`
+  ).run(date, val);
+  return { ok: true };
+}
+
+// Progress toward the daily goal (met when time OR problem target is reached),
+// current streak of goal-met days, and a per-day series for a heatmap.
+function getDailyProgress(goalMinutes, goalProblems, days = 371) {
+  const goalMs = Math.max(0, (goalMinutes || 0) * 60000);
+  const goalProbs = Math.max(0, goalProblems || 0);
+
+  const problemsByDay = {};
+  for (const r of db.prepare('SELECT timestamp FROM results').all()) {
+    const k = localDate(new Date(r.timestamp));
+    problemsByDay[k] = (problemsByDay[k] || 0) + 1;
+  }
+  const msByDay = {};
+  for (const r of db.prepare('SELECT date, practice_ms FROM daily').all()) {
+    msByDay[r.date] = r.practice_ms;
+  }
+
+  const series = [];
+  const now = new Date();
+  for (let i = days - 1; i >= 0; i--) {
+    const d = new Date(now);
+    d.setDate(now.getDate() - i);
+    const k = localDate(d);
+    const practiceMs = msByDay[k] || 0;
+    const problems = problemsByDay[k] || 0;
+    const goalMet = (goalMs > 0 && practiceMs >= goalMs) || (goalProbs > 0 && problems >= goalProbs);
+    series.push({ date: k, practiceMs, problems, goalMet });
+  }
+
+  const today = series[series.length - 1];
+  // Streak of consecutive goal-met days ending today (or yesterday if today isn't done yet).
+  let streak = 0;
+  let i = series.length - 1;
+  if (!series[i].goalMet) i -= 1;
+  for (; i >= 0; i--) {
+    if (series[i].goalMet) streak += 1;
+    else break;
+  }
+
+  return { today, streak, series, goalMinutes: goalMinutes || 0, goalProblems: goalProbs };
+}
+
 function getHistory(limit = 300) {
   const rows = db.prepare(`
     SELECT id, title, type, topic, difficulty, was_correct, time_spent_ms, timestamp, user_code, problem_json, feedback
@@ -292,4 +395,17 @@ function setResultCorrectness(id, wasCorrect) {
   return { ok: info.changes > 0 };
 }
 
-module.exports = { init, startSession, recordResult, getStats, getHistory, getAdaptiveSummary, setResultCorrectness, close };
+module.exports = {
+  init,
+  startSession,
+  recordResult,
+  getStats,
+  getHistory,
+  getAdaptiveSummary,
+  setResultCorrectness,
+  recordSeenProblem,
+  getRecentTitles,
+  setTodayPracticeMs,
+  getDailyProgress,
+  close,
+};

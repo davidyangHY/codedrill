@@ -18,7 +18,29 @@ const DISALLOWED_TOOLS = [
 
 let queryFn = null;
 let sessionId = null; // resumed across turns for multi-turn memory
+let sessionLoaded = false; // whether we've hydrated sessionId from disk yet
 const activeStreams = new Map();
+
+// The tutor session id is persisted so the conversation (the tutor's own memory)
+// survives an app restart. Hydrate lazily — the config path needs app userData.
+function loadPersistedSession() {
+  if (sessionLoaded) return;
+  sessionLoaded = true;
+  try {
+    sessionId = config.getTutorSessionId();
+  } catch {
+    sessionId = null;
+  }
+}
+
+function setSessionId(id) {
+  sessionId = id || null;
+  try {
+    config.setTutorSessionId(sessionId);
+  } catch {
+    /* non-fatal */
+  }
+}
 
 // Latest Claude plan usage, captured passively from rate_limit_event messages
 // that the SDK emits on every turn. Persisted so we can show last-known on start.
@@ -147,7 +169,8 @@ function friendlyError(err, stderrRef) {
  */
 async function streamChat(requestId, text, opts, handlers) {
   const { reset, ephemeral } = opts || {};
-  if (reset) sessionId = null;
+  loadPersistedSession();
+  if (reset) setSessionId(null);
 
   let query;
   try {
@@ -166,12 +189,13 @@ async function streamChat(requestId, text, opts, handlers) {
   // and don't extend it — the prompt is self-contained, so this is faster/cheaper.
   if (!ephemeral && sessionId) options.resume = sessionId;
   if (ephemeral) options.maxTurns = 1;
+  const wasResume = !!options.resume;
 
   let full = '';
   try {
     const q = query({ prompt: text, options });
     for await (const message of q) {
-      if (message.session_id && !ephemeral) sessionId = message.session_id;
+      if (message.session_id && !ephemeral) setSessionId(message.session_id);
       if (message.type === 'rate_limit_event') captureRateLimit(message.rate_limit_info);
 
       if (message.type === 'stream_event') {
@@ -192,6 +216,9 @@ async function streamChat(requestId, text, opts, handlers) {
           const finalText = full || (message.result || '');
           handlers.onDone(requestId, finalText);
         } else {
+          // A resumed session that the SDK can no longer find shouldn't wedge the
+          // tutor forever — drop it so the next turn starts a fresh conversation.
+          if (wasResume) setSessionId(null);
           handlers.onError(requestId, describeResult(message, stderrRef));
         }
         return;
@@ -206,6 +233,7 @@ async function streamChat(requestId, text, opts, handlers) {
       handlers.onDone(requestId, full);
       return;
     }
+    if (wasResume) setSessionId(null);
     handlers.onError(requestId, friendlyError(err, stderrRef));
   }
 }
@@ -257,7 +285,8 @@ async function refreshUsage() {
 }
 
 function resetSession() {
-  sessionId = null;
+  sessionLoaded = true; // an explicit reset supersedes any persisted id
+  setSessionId(null);
 }
 
 function cancel(requestId) {

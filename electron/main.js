@@ -100,6 +100,7 @@ function buildMenu() {
             const database = loadDb();
             if (database) database.startSession();
             ai.resetSession();
+            config.setWorkspace(null); // don't reload the old session next launch
             send('menu:new-session');
           },
         },
@@ -206,6 +207,26 @@ function registerIpc() {
     }
   });
 
+  ipcMain.handle('db:recordSeenProblem', (_e, payload) => {
+    const database = loadDb();
+    if (!database) return { ok: false };
+    try {
+      return database.recordSeenProblem(payload || {});
+    } catch (err) {
+      return { ok: false, error: err.message };
+    }
+  });
+
+  ipcMain.handle('db:getRecentTitles', (_e, typeLabel, limit) => {
+    const database = loadDb();
+    if (!database) return [];
+    try {
+      return database.getRecentTitles(typeLabel, limit);
+    } catch (err) {
+      return [];
+    }
+  });
+
   ipcMain.handle('db:getAdaptiveSummary', (_e, typeLabel) => {
     const database = loadDb();
     if (!database) return null;
@@ -235,6 +256,35 @@ function registerIpc() {
       return { ok: false, error: err.message };
     }
   });
+
+  ipcMain.handle('daily:setToday', (_e, ms) => {
+    const database = loadDb();
+    if (!database) return { ok: false };
+    try {
+      return database.setTodayPracticeMs(ms);
+    } catch (err) {
+      return { ok: false, error: err.message };
+    }
+  });
+
+  ipcMain.handle('daily:getProgress', () => {
+    const database = loadDb();
+    const goal = config.getGoal();
+    if (!database) return { today: null, streak: 0, series: [], goalMinutes: goal.minutes, goalProblems: goal.problems, goal };
+    try {
+      return { ...database.getDailyProgress(goal.minutes, goal.problems), goal };
+    } catch (err) {
+      return { today: null, streak: 0, series: [], goal, error: err.message };
+    }
+  });
+
+  ipcMain.handle('daily:getGoal', () => config.getGoal());
+  ipcMain.handle('daily:setGoal', (_e, patch) => config.setGoal(patch || {}));
+
+  // Workspace: reload the last session (problem, code, chat) on next launch.
+  ipcMain.handle('workspace:load', () => config.getWorkspace());
+  ipcMain.handle('workspace:save', (_e, ws) => config.setWorkspace(ws));
+  ipcMain.handle('workspace:clear', () => config.setWorkspace(null));
 
   ipcMain.handle('db:newSession', () => {
     const database = loadDb();
