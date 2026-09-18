@@ -1,21 +1,25 @@
 # CodeDrill
 
-A desktop app for **SQL & Python interview practice** with a built-in AI tutor powered by Claude. Generate fresh, interview-style problems on demand, solve them in a real Monaco code editor, get your solution graded and explained, and track your progress over time.
+A desktop app for **SQL & Python interview practice** with an **adaptive AI tutor** powered by Claude. It watches what you get wrong and deliberately serves problems that target your weak spots, adjusting difficulty and variety as you improve — like a real tutor. Solve problems in a real Monaco editor, get graded and explained, build a daily practice habit, and track everything over time.
 
 ![Electron](https://img.shields.io/badge/Electron-33-47848F) ![React](https://img.shields.io/badge/React-18-61DAFB)
 
 ## Features
 
 - **Split-pane workspace** — problem + Monaco editor on the left, AI tutor chat on the right (both dividers are draggable).
-- **Mode & difficulty** — toggle SQL / Python and Easy / Medium / Hard.
-- **New Problem** — Claude generates a fresh problem (description, table schemas for SQL, examples, hint) that renders in the problem panel and the chat.
-- **Run vs Submit** — **Run** does a quick check and replies with just ✓/✗ (no explanation); **Submit** returns the full grade with bugs, fixes, and a clean version. Whichever you press first records the attempt.
-- **Free-form chat** — ask for hints, explanations, or "give me a harder version of this."
-- **Timer** — starts automatically when you begin typing, stops on your first Run/Submit.
-- **Progress tracking** (SQLite) — total solved, accuracy, average time, and day streak in the **Stats** view.
-- **Weak-spots review** — each problem is tagged with its concept (window functions, sliding window, …). Stats shows the concepts you miss most, each with a **Practice** button that generates a fresh problem targeting it.
-- **History** (File → History, Ctrl+H) — every attempt, filterable by **Solved / Attempted**. Expand any one to re-read the original problem, your solution, and the tutor's feedback, and **Reopen & retry** to load it back into the editor.
-- **Desktop niceties** — remembers window size/position, dark theme, native menu bar (File / Mode / View).
+- **Adaptive tutor** — with difficulty set to **Auto**, Claude picks your next problem from your history: it prioritizes concepts you miss or rarely practice, avoids repeating recent concepts, and steps difficulty up or down as you succeed or struggle. You can still force **Easy / Medium / Hard**, and toggle **SQL / Python**.
+- **New Problem** — Claude generates a fresh, interview-style problem (description, table schemas for SQL, examples, hint) that renders in the problem panel. The concept being tested is hidden from the problem and chat (it's a giveaway) and only shown later in Stats/History.
+- **No repeats** — every generated problem's title is saved to a durable table and fed back to the model, so it invents genuinely new problems instead of looping the same classics across restarts.
+- **Run vs Submit** — **Run** does a quick check and replies with just a **CORRECT / INCORRECT** verdict (no explanation); **Submit** returns the full grade with bugs, fixes, and a clean version. Whichever you press first records the attempt.
+- **Free-form chat** — ask for hints, explanations, or "give me a harder version of this." Requests for a new problem are answered adaptively too.
+- **Session reload** — quit and reopen and you land back on the exact problem you had open, with your code and chat intact. The tutor's own conversation is resumed and your weak-spot history persists, so it picks up where you left off.
+- **Daily practice** — set a goal of X minutes **or** X problems (whichever comes first). A pausable per-day timer (with seconds) tracks focused time, and a day counts toward your **streak** when you hit either target.
+- **Contribution calendar** — a full-year GitHub-style heatmap of your practice (darker green = more active), at the top of the History page.
+- **Progress tracking** (SQLite) — total solved, accuracy, average time, and day streak on the **Stats** page.
+- **Weak-spots review** — Stats lists the concepts you miss most, each with a **Practice** button that generates a fresh problem targeting it.
+- **History** — every attempt, filterable by **Solved / Attempted**. Expand any one to re-read the original problem, your solution, and the tutor's feedback, and **Reopen & retry** to load it back into the editor.
+- **Plan usage** — a chip in the top bar shows your Claude 5-hour usage; the **Usage** panel breaks down the 5-hour / 7-day windows and lets you switch models.
+- **Desktop niceties** — remembers window size/position, dark theme, native menu bar (File / Mode / View), keyboard shortcuts (Ctrl+N new session, Ctrl+S Stats, Ctrl+H History, Ctrl+U Usage, Ctrl+1/2 mode).
 
 ## Setup
 
@@ -61,19 +65,22 @@ npm start
 
 This starts the Vite dev server and launches Electron once it's ready.
 
-## Build the renderer
+## Build
 
 ```bash
-npm run build        # outputs to ./dist
-npm run preview      # runs Electron against the production build
+npm run build        # build the renderer to ./dist
+npm run preview      # run Electron against the production build
+npm run pack         # package an unpacked Windows app to ./release/win-unpacked
+npm run dist         # build a Windows installer
+npm run icon         # regenerate build/icon.ico from assets/icon.svg
 ```
 
 ## Configuration
 
 | Variable | Default | Purpose |
 | --- | --- | --- |
-| `ANTHROPIC_API_KEY` | — | Your Anthropic API key. |
-| `ANTHROPIC_MODEL` | `claude-sonnet-5` | Override the model used for generation & grading. |
+| `ANTHROPIC_API_KEY` | — | Your Anthropic API key (switches to pay-as-you-go API billing). |
+| `ANTHROPIC_MODEL` | `haiku` | Model alias/id for generation & grading. Defaults to **Haiku** — lightest on the plan's limits, plenty for these problems. Changeable in-app from the Usage panel. |
 
 ## Project structure
 
@@ -81,16 +88,21 @@ npm run preview      # runs Electron against the production build
 electron/
   main.js       Electron main process: window, menu, IPC, window-state persistence
   preload.js    contextBridge API exposed to the renderer as window.api
-  config.js     API key + window state (env var wins over stored key)
-  db.js         better-sqlite3: sessions + per-problem results, stats & streak
-  ai.js         Anthropic streaming chat + the CodeDrill system prompt
+  config.js     stored settings: model, daily goal, window state, saved workspace
+                & tutor session id (env ANTHROPIC_API_KEY / ANTHROPIC_MODEL win)
+  db.js         better-sqlite3: results (with problem snapshots), daily practice,
+                seen-problems dedup, stats, streaks & adaptive summaries
+  ai.js         Claude Agent SDK streaming, the adaptive system prompt, usage capture,
+                and a persisted session id so the tutor resumes after a restart
 src/renderer/
-  App.jsx       App shell: split panes, timer, all AI flow logic
-  components/    TopBar, ProblemDisplay, CodeEditor, Chat, StatsModal, Setup
+  App.jsx       App shell: split panes, timers, view routing, all AI flow logic
+  components/    TopBar, ProblemDisplay, CodeEditor, Chat, StatsPage, HistoryPage,
+                 ContributionCalendar, DailyModal, UsageModal, Welcome
   lib/          aiClient (IPC stream bridge), parse (JSON/verdict/markdown)
 ```
 
 ## Notes
 
-- Problems are **not** stored — only your session history and per-problem results (for progress tracking), per the design.
+- **What's stored:** your session history and per-attempt results — including a snapshot of each attempted problem so History can show it — plus the titles of generated problems (to avoid repeats), daily practice time, and your saved workspace/tutor-session for reload. It's all local SQLite + a small JSON config in Electron's userData; nothing is uploaded.
 - The tutor is asked to end each grade with a hidden `VERDICT: CORRECT/INCORRECT` line, which is parsed to record correctness and then stripped from the displayed reply.
+- The database is checkpointed on each attempt and flushed cleanly on quit, so recent progress is never stranded in the write-ahead log.
